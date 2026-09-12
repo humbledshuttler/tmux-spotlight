@@ -92,12 +92,18 @@ contains 'list: context shows the path' '~' \
 	"$(printf '%s\n' "$out" | sed -n 1p | field 3 | strip_ansi)"
 check 'list: no pane count for a single pane' '' \
 	"$(printf '%s\n' "$out" | sed -n 1p | field 3 | strip_ansi | grep pane)"
-# Whatever tmux says the pane is running -- a fresh pane is not reliably the
-# login shell yet.
-pane_cmd="$(tmux display-message -p -t '=alpha:0' '#{pane_current_command}')"
+# A window running a command we chose, so the expected value cannot drift
+# under load the way a freshly spawned shell's does.
+tmux new-window -t '=alpha:' -n ctx-probe -c "$HOME" 'sleep 300'
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+	[ "$(tmux display-message -p -t '=alpha:ctx-probe' '#{pane_current_command}')" = sleep ] && break
+	sleep 0.1
+done
 # shellcheck disable=SC2209  # "command" is the option's value, not the builtin
-contains 'list: context can be the command instead' "$pane_cmd" \
-	"$(SPOTLIGHT_CONTEXT=command "$ROOT/scripts/list-windows.sh" alpha | sed -n 1p | field 3 | strip_ansi)"
+contains 'list: context can be the command instead' 'sleep' \
+	"$(SPOTLIGHT_CONTEXT=command "$ROOT/scripts/list-windows.sh" alpha \
+		| grep ctx-probe | field 3 | strip_ansi)"
+tmux kill-window -t '=alpha:ctx-probe'
 check 'list: context can be turned off' '' \
 	"$(SPOTLIGHT_CONTEXT=none "$ROOT/scripts/list-windows.sh" alpha | sed -n 1p | field 3 | strip_ansi | tr -d ' ')"
 check 'list: other session listed on request' '2' \
@@ -259,6 +265,9 @@ contains 'custom key is honoured' 'scripts/open.sh' "$binding"
 tmux set-option -gu @spotlight-key
 
 # --- popup sizing ---------------------------------------------------------------
+# Detach whatever the earlier pty test left behind: an attached client changes
+# the size cap, and these assertions compare sizes across several calls.
+tmux detach-client -a 2>/dev/null
 read -r cols rows <<<"$("$ROOT/scripts/popup-size.sh" '')"
 windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
 # shellcheck source-path=SCRIPTDIR/../scripts source=helpers.sh
@@ -276,7 +285,17 @@ tmux new-window -t '=beta:' -n an-extremely-long-window-name-here -c "$HOME"
 tmux new-window -t '=beta:' -n filler -c "$HOME"
 read -r cols2 rows2 <<<"$("$ROOT/scripts/popup-size.sh" '')"
 check 'size: grows with the deepest session' "$((rows + 1))" "$rows2"
-check 'size: grows with the widest row' '1' "$([ "$cols2" -gt "$cols" ] && echo 1 || echo 0)"
+
+# Growth stops at the cap, which is where a narrow client already sits.
+read -r client_cols _ <<<"$(tmux display-message -p '#{client_width} #{client_height}')"
+cap=$(( ${client_cols:-80} * 9 / 10 ))
+if [ "$cols" -lt "$cap" ]; then
+	check 'size: grows with the widest row' '1' "$([ "$cols2" -gt "$cols" ] && echo 1 || echo 0)"
+else
+	printf '  skip width growth test (already at the %s-column cap)\n' "$cap"
+fi
+check 'size: never wider than the client allows' '1' \
+	"$([ "$cols2" -le "$cap" ] && echo 1 || echo 0)"
 tmux kill-window -t '=beta:an-extremely-long-window-name-here'
 
 # --- the opener -----------------------------------------------------------------
