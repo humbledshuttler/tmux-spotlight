@@ -103,39 +103,31 @@ set -g @plugin 'humbledshuttler/tmux-spotlight'
 
 ## How it works
 
-`spotlight.tmux` binds your key to `scripts/open.sh`, which measures the
-content with `scripts/popup-size.sh` and opens a `display-popup -EE` of exactly
-that size running `scripts/spotlight.sh`. The binding goes through a script
-because a popup's size is fixed when it opens and tmux formats cannot measure
-the longest window name.
+The whole plugin is one file, `spotlight.tmux`, which takes three roles from
+its first argument: no argument binds the key (what TPM runs), `open` measures
+and opens the popup, `run` is the switcher inside it. A popup's size is fixed
+when it opens and tmux formats cannot measure the longest window name, so the
+key runs `open` rather than `display-popup` directly. A popup pane belongs to
+no session, so the calling session and client are passed down both times.
 
-`scripts/spotlight.sh` builds a tab-delimited list with
-`scripts/list-windows.sh` — `target`, a searchable `index + name` column, and an
-unsearchable context column — and pipes it to fzf with `--nth` pointed at the
-searchable column, so the pane command and pane count stay visible without
-polluting your matches. The pick is turned back into `select-window` (plus
-`switch-client` when the window lives in another session).
+The list is tab-delimited — `target`, a searchable `index + name` column, and
+an unsearchable context column — and fzf's `--nth` points at the searchable
+one, so the path and pane count stay visible without polluting your matches.
+The pick is turned back into `select-window`, plus `switch-client` when the
+window lives in another session.
 
 Session switching is a loop rather than an fzf `reload` binding: `--expect`
 reports `left`/`right`, and the script relaunches fzf for the newly browsed
-session, carrying the query over with `--query` and redrawing the strip from
-`scripts/session-strip.sh`. It costs a redraw per keypress, but it works on any
-fzf new enough to have `--expect` instead of requiring a recent `transform-header`.
+session, carrying the query over with `--query`. It costs a redraw per
+keypress, but works on any fzf with `--expect` instead of needing a recent
+enough one for `transform-header`.
 
 Secondary columns are dimmed with the faint *attribute* rather than a grey
-colour, and the row never emits a full reset. Both matter for the highlight:
-fzf styles the current row by opening an escape before the line, so a `\033[0m`
-in the content closes it halfway through, and a hardcoded grey survives onto
-the highlight and disappears into it.
-
-Two other details keep the layout honest: `--tabstop=1` makes the field
-delimiter render as exactly one space, so a row's width on screen is the width
-that was measured, and `--no-separator` reclaims the row newer fzf rules off
-under the prompt.
-
-A popup pane belongs to no session, so the key binding passes the calling
-session and client to the script as `TMUX_SPOTLIGHT_SESSION` and
-`TMUX_SPOTLIGHT_CLIENT`.
+colour, and a row never emits a full reset. Both matter for the highlight: fzf
+styles the current row by opening an escape before the line, so a `\033[0m` in
+the content closes it halfway through, and a hardcoded grey survives onto the
+highlight and disappears into it. `--tabstop=1` makes the field delimiter
+render as exactly one space, so a row's measured width is its width on screen.
 
 ## Tests
 
@@ -143,12 +135,13 @@ session and client to the script as `TMUX_SPOTLIGHT_SESSION` and
 tests/run.sh
 ```
 
-The suite starts a throwaway tmux server on its own socket with
-`-f /dev/null`, so it never touches your sessions or your config. Fuzzy-matching
-tests are skipped when fzf is not on `PATH`. The switcher loop is driven through
-a stub fzf that replays canned responses and records the arguments it was
-given, so session cycling, query carry-over and selection are all covered
-without a terminal.
+The suite sources `spotlight.tmux` and calls its functions directly — the
+guard at the foot of the file is what lets it be sourced without running — and
+drives a throwaway tmux server on its own socket with `-f /dev/null`, so it
+never touches your sessions or your config. The switcher loop runs against a
+stub fzf that replays canned replies; the sizing tests attach two clients of
+sizes they choose, each inside its own outer tmux. Tests needing a real fzf
+skip when it is not on `PATH`.
 
 ## License
 

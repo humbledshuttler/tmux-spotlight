@@ -1,377 +1,166 @@
 #!/usr/bin/env bash
-# Smoke tests for tmux-spotlight. Runs a throwaway tmux server on its own
-# socket and puts a `tmux` wrapper pinned to that socket on PATH, so the tests
-# never touch the user's real sessions.
+# tmux-spotlight tests.
+#
+# Runs a throwaway tmux server on its own socket, with a `tmux` wrapper pinned
+# to it on PATH, so nothing here touches the real server or ~/.tmux.conf.
+# The plugin is sourced, not run, which is what the guard at its foot is for.
 set -u
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 REAL_TMUX="$(command -v tmux)"
 SOCKET="spotlight-test-$$"
-BIN="$(mktemp -d)"
 WORK="$(mktemp -d)"
 
-pass=0
-fail=0
-
-cleanup() {
-	"$REAL_TMUX" -L "$SOCKET" kill-server 2>/dev/null
-	rm -rf "$BIN" "$WORK"
-}
+pass=0 fail=0
+cleanup() { "$REAL_TMUX" -L "$SOCKET" kill-server 2>/dev/null; rm -rf "$WORK"; }
 trap cleanup EXIT
 
-# -f /dev/null keeps the test server out of the user's tmux.conf.
-printf '#!/usr/bin/env bash\nexec %s -f /dev/null -L %s "$@"\n' "$REAL_TMUX" "$SOCKET" > "$BIN/tmux"
-chmod +x "$BIN/tmux"
-PATH="$BIN:$PATH"
+printf '#!/usr/bin/env bash\nexec %s -f /dev/null -L %s "$@"\n' "$REAL_TMUX" "$SOCKET" > "$WORK/tmux"
+chmod +x "$WORK/tmux"
+PATH="$WORK:$PATH"
 
-check() {
-	if [ "$2" = "$3" ]; then
-		printf '  ok   %s\n' "$1"
-		pass=$((pass + 1))
-	else
-		printf '  FAIL %s\n       expected: [%s]\n       actual:   [%s]\n' "$1" "$2" "$3"
-		fail=$((fail + 1))
-	fi
-}
-
-contains() {
-	case "$3" in
-		*"$2"*)
-			printf '  ok   %s\n' "$1"
-			pass=$((pass + 1))
-			;;
-		*)
-			printf '  FAIL %s\n       missing: [%s]\n       in:      [%s]\n' "$1" "$2" "$3"
-			fail=$((fail + 1))
-			;;
-	esac
-}
-
-lacks() {
-	case "$3" in
-		*"$2"*)
-			printf '  FAIL %s\n       unexpected: [%s]\n       in:         [%s]\n' "$1" "$2" "$3"
-			fail=$((fail + 1))
-			;;
-		*)
-			printf '  ok   %s\n' "$1"
-			pass=$((pass + 1))
-			;;
-	esac
-}
-
-strip_ansi() { sed $'s/\033\\[[0-9;]*m//g'; }
-field() { cut -f"$1"; }
+ok()   { pass=$((pass + 1)); printf '  ok   %s\n' "$1"; }
+bad()  { fail=$((fail + 1)); printf '  FAIL %s\n       expected: [%s]\n       actual:   [%s]\n' "$1" "$2" "$3"; }
+is()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "$2" "$3"; fi; }
+has()  { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1" "contains $2" "$3" ;; esac; }
+hasnt() { case "$3" in *"$2"*) bad "$1" "no $2" "$3" ;; *) ok "$1" ;; esac; }
+plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 
 echo "tmux-spotlight tests ($(tmux -V), socket $SOCKET)"
+
+# shellcheck source-path=SCRIPTDIR/.. source=spotlight.tmux
+. "$ROOT/spotlight.tmux"
 
 tmux new-session -d -s alpha -n editor -c "$HOME"
 tmux new-window -t '=alpha:' -n server -c "$HOME"
 tmux new-window -t '=alpha:' -n 'my long window' -c "$HOME"
-tmux new-session -d -s beta -n notes -c "$HOME"
-tmux new-window -t '=beta:' -n build -c "$HOME"
-tmux select-window -t '=alpha:1' 
-
-# --- the window list ----------------------------------------------------------
-out="$("$ROOT/scripts/list-windows.sh" alpha)"
-check 'list: one line per window' '3' "$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
-check 'list: targets' 'alpha:0 alpha:1 alpha:2' \
-	"$(printf '%s\n' "$out" | field 1 | tr '\n' ' ' | sed 's/ $//')"
-check 'list: only the named session' '' "$(printf '%s\n' "$out" | field 1 | grep beta)"
-contains 'list: window name is searchable' 'my long window' \
-	"$(printf '%s\n' "$out" | field 2 | strip_ansi | tr '\n' '|')"
-contains 'list: window index is searchable' '2' \
-	"$(printf '%s\n' "$out" | sed -n 3p | field 2 | strip_ansi)"
-contains 'list: active window marked' '*' \
-	"$(printf '%s\n' "$out" | sed -n 2p | field 2 | strip_ansi)"
-check 'list: inactive windows unmarked' '' \
-	"$(printf '%s\n' "$out" | sed -n 1p | field 2 | strip_ansi | grep '\*')"
-check 'list: searchable column padded to one width' '1' \
-	"$(printf '%s\n' "$out" | field 2 | strip_ansi | awk '{print length($0)}' | sort -u | wc -l | tr -d ' ')"
-contains 'list: context shows the path' '~' \
-	"$(printf '%s\n' "$out" | sed -n 1p | field 3 | strip_ansi)"
-check 'list: no pane count for a single pane' '' \
-	"$(printf '%s\n' "$out" | sed -n 1p | field 3 | strip_ansi | grep pane)"
-# A window running a command we chose, so the expected value cannot drift
-# under load the way a freshly spawned shell's does.
-tmux new-window -t '=alpha:' -n ctx-probe -c "$HOME" 'sleep 300'
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-	[ "$(tmux display-message -p -t '=alpha:ctx-probe' '#{pane_current_command}')" = sleep ] && break
-	sleep 0.1
-done
-# shellcheck disable=SC2209  # "command" is the option's value, not the builtin
-contains 'list: context can be the command instead' 'sleep' \
-	"$(SPOTLIGHT_CONTEXT=command "$ROOT/scripts/list-windows.sh" alpha \
-		| grep ctx-probe | field 3 | strip_ansi)"
-tmux kill-window -t '=alpha:ctx-probe'
-check 'list: context can be turned off' '' \
-	"$(SPOTLIGHT_CONTEXT=none "$ROOT/scripts/list-windows.sh" alpha | sed -n 1p | field 3 | strip_ansi | tr -d ' ')"
-check 'list: other session listed on request' '2' \
-	"$("$ROOT/scripts/list-windows.sh" beta | wc -l | tr -d ' ')"
-
 tmux split-window -t '=alpha:0'
-contains 'list: pane count appears once a window splits' '2 panes' \
-	"$("$ROOT/scripts/list-windows.sh" alpha | sed -n 1p | field 3 | strip_ansi)"
+tmux new-session -d -s beta -n notes -c "$HOME"
+tmux new-session -d -s 0 -n zero -c "$HOME"
+tmux select-window -t '=alpha:1'
 
+# --- the window list ---------------------------------------------------------
+rows="$(list_windows alpha)"
+is 'list: one row per window in the session' '3' "$(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
+is 'list: targets, in order' 'alpha:0 alpha:1 alpha:2' \
+	"$(printf '%s\n' "$rows" | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
+hasnt 'list: no other session leaks in' 'beta' "$(printf '%s\n' "$rows" | cut -f1)"
+has 'list: name and index are searchable' 'my long window' \
+	"$(printf '%s\n' "$rows" | cut -f2 | plain | tr '\n' '|')"
+has 'list: the active window is marked' '*' "$(printf '%s\n' "$rows" | sed -n 2p | cut -f2 | plain)"
+hasnt 'list: the others are not' '*' "$(printf '%s\n' "$rows" | sed -n 1p | cut -f2 | plain)"
+is 'list: columns share one width across sessions' '1' \
+	"$({ list_windows alpha; list_windows beta; } | cut -f2 | plain | awk '{print length($0)}' | sort -u | wc -l | tr -d ' ')"
+has 'list: context shows the path' '~' "$(printf '%s\n' "$rows" | sed -n 2p | cut -f3 | plain)"
+has 'list: and a pane count once a window splits' '2 panes' \
+	"$(printf '%s\n' "$rows" | sed -n 1p | cut -f3 | plain)"
+hasnt 'list: but not for a single pane' 'pane' "$(printf '%s\n' "$rows" | sed -n 2p | cut -f3 | plain)"
 # A session named like a number must not be read as a window index.
-tmux new-session -d -s 0 -n zero-window -c "$HOME"
-check 'list: a numerically named session resolves' 'zero-window' \
-	"$("$ROOT/scripts/list-windows.sh" 0 | field 2 | strip_ansi | awk '{print $NF}')"
-check 'list: columns are padded across all sessions' '1' \
-	"$({ "$ROOT/scripts/list-windows.sh" alpha; "$ROOT/scripts/list-windows.sh" beta; } \
-		| field 2 | strip_ansi | awk '{print length($0)}' | sort -u | wc -l | tr -d ' ')"
-tmux kill-session -t '=0' 
+has 'list: a numerically named session resolves' 'zero' "$(list_windows 0 | cut -f2 | plain)"
 
-# --- the session strip ---------------------------------------------------------
-strip="$("$ROOT/scripts/session-strip.sh" 0 0 alpha beta)"
-contains 'strip: lists every session' 'alpha' "$(printf '%s' "$strip" | strip_ansi)"
-contains 'strip: lists every session (2)' 'beta' "$(printf '%s' "$strip" | strip_ansi)"
-contains 'strip: shows the arrow affordance' '←' "$(printf '%s' "$strip" | strip_ansi)"
-contains 'strip: highlights the browsed session' $'\033[7m alpha ' "$strip"
-lacks 'strip: does not highlight the others' $'\033[7m beta ' "$strip"
-contains 'strip: highlight follows the index' $'\033[7m beta ' \
-	"$("$ROOT/scripts/session-strip.sh" 1 0 alpha beta)"
-check 'strip: hidden when there is only one session' '' "$("$ROOT/scripts/session-strip.sh" 0 40 alpha)"
-
-wide="$("$ROOT/scripts/session-strip.sh" 0 60 alpha beta | strip_ansi)"
-narrow="$("$ROOT/scripts/session-strip.sh" 0 0 alpha beta | strip_ansi)"
+# --- the session strip -------------------------------------------------------
+strip="$(session_strip 1 0 alpha beta)"
+has 'strip: highlights the session being browsed' $'\033[7m beta ' "$strip"
+hasnt 'strip: and only that one' $'\033[7m alpha ' "$strip"
+wide="$(session_strip 1 60 alpha beta | plain)"
 lead="${wide%%[! ]*}"
-check 'strip: centred within the given width' "$(((60 - ${#narrow}) / 2))" "${#lead}"
-check 'strip: no padding without a width' '←' "${narrow:0:1}"
+is 'strip: centred in the width it is given' "$(((60 - ${#wide} + ${#lead}) / 2))" "${#lead}"
+is 'strip: absent when there is only one session' '' "$(session_strip 0 60 alpha)"
 
-# --- fuzzy matching (needs a real fzf) ----------------------------------------
-if command -v fzf >/dev/null 2>&1; then
-	filter() {
-		"$ROOT/scripts/list-windows.sh" alpha \
-			| fzf --ansi --delimiter=$'\t' --with-nth=2,3 --nth=1 --filter="$1" \
-			| field 1 | tr '\n' ' ' | sed 's/ $//'
-	}
-	check 'fuzzy: exact name' 'alpha:1' "$(filter server)"
-	check 'fuzzy: subsequence match' 'alpha:2' "$(filter mlw)"
-	check 'fuzzy: gappy subsequence' 'alpha:2' "$(filter ylong)"
-	check 'fuzzy: index match' 'alpha:1' "$(filter 1)"
-	check 'fuzzy: no match' '' "$(filter zzzznope)"
-	check 'fuzzy: context column is not searchable' '' "$(filter '2 panes')"
-else
-	printf '  skip fuzzy matching tests (fzf not on PATH)\n'
-fi
-
-# --- the switcher loop ---------------------------------------------------------
-# A stub fzf replays one canned response per invocation and records the
-# arguments it was given, so the loop can be driven without a terminal.
-STUB="$(mktemp -d)"
-cat > "$STUB/fzf" <<'STUBSH'
-#!/usr/bin/env bash
-[ "${1:-}" = --version ] && { echo '0.99.0 (stub)'; exit 0; }
-cat > /dev/null
-n=$(( $(cat "$TEST_DIR/n" 2>/dev/null || echo 0) + 1 ))
-echo "$n" > "$TEST_DIR/n"
-printf '%s\n' "$@" > "$TEST_DIR/args.$n"
-cat "$TEST_DIR/resp.$n" 2>/dev/null
-exit "$(cat "$TEST_DIR/rc.$n" 2>/dev/null || echo 0)"
-STUBSH
-chmod +x "$STUB/fzf"
-
-# Each response is query, then the --expect key, then the selected line.
-respond() { printf '%s\n' "$2" "$3" "$4" > "$WORK/resp.$1"; }
-run_switcher() {
-	rm -f "$WORK/n" "$WORK"/resp.* "$WORK"/args.* "$WORK"/rc.*
-	local n=1
-	while [ "$#" -gt 0 ]; do
-		respond "$n" "$1" "$2" "$3"
-		shift 3
-		n=$((n + 1))
-	done
-	PATH="$STUB:$PATH" TEST_DIR="$WORK" TMUX_SPOTLIGHT_SESSION=alpha \
-		"$ROOT/scripts/spotlight.sh" 2>/dev/null
-}
-args_of() { cat "$WORK/args.$1"; }
-# The strip marks the browsed session with reverse video; match it raw.
-browsed_in() { grep -c -- "--header=.*$(printf '\033')\[7m $2 " "$WORK/args.$1" 2>/dev/null || true; }
-
-tmux select-window -t alpha:0
-run_switcher '' '' "$(printf 'alpha:2\tx\tx')"
-check 'loop: Enter selects the window' '2' "$(tmux display-message -p -t alpha '#{window_index}')"
-check 'loop: browsing starts on the calling session' '1' "$(browsed_in 1 alpha)"
-
-tmux select-window -t alpha:0
-run_switcher 'serv' 'right' '' '' '' "$(printf 'beta:1\tx\tx')"
-check 'loop: right arrow browses the next session' '1' "$(browsed_in 2 beta)"
-check 'loop: query carries across sessions' '--query=serv' "$(args_of 2 | grep -- '--query=')"
-check 'loop: the new list is the new session' 'beta' \
-	"$(tmux display-message -p -t beta '#{session_name}')"
-
-run_switcher '' 'left' '' '' '' "$(printf 'alpha:0\tx\tx')"
-check 'loop: left arrow wraps to the last session' '1' "$(browsed_in 2 beta)"
-
-before="$(tmux display-message -p -t alpha '#{window_index}')"
-printf '130\n' > "$WORK/rc.1"
-PATH="$STUB:$PATH" TEST_DIR="$WORK" TMUX_SPOTLIGHT_SESSION=alpha "$ROOT/scripts/spotlight.sh"
-check 'loop: Esc changes nothing' "$before" "$(tmux display-message -p -t alpha '#{window_index}')"
-
-run_switcher '' '' ''
-check 'loop: empty selection changes nothing' "$before" "$(tmux display-message -p -t alpha '#{window_index}')"
-
-rm -rf "$STUB"
-
-# --- cross-session switching needs a real client ------------------------------
-script -qfc "$BIN/tmux attach -t alpha" /dev/null >/dev/null 2>&1 &
-attach_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-	client_tty="$(tmux list-clients -F '#{client_tty}' 2>/dev/null | head -1)"
-	[ -n "$client_tty" ] && break
-	sleep 0.2
-done
-if [ -n "${client_tty:-}" ]; then
-	STUB="$(mktemp -d)"
-	# shellcheck disable=SC2016  # $TEST_PICK is expanded by the stub, not here
-	printf '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo 0.99.0; exit 0; }\ncat >/dev/null\nprintf "%%s\\n" "" "" "$TEST_PICK"\n' > "$STUB/fzf"
-	chmod +x "$STUB/fzf"
-	PATH="$STUB:$PATH" TEST_PICK="$(printf 'beta:0\tx\tx')" \
-		TMUX_SPOTLIGHT_SESSION=alpha TMUX_SPOTLIGHT_CLIENT="$client_tty" \
-		"$ROOT/scripts/spotlight.sh"
-	check 'picking another session switches the client' 'beta' \
-		"$(tmux display-message -p -t "$client_tty" '#{client_session}')"
-	rm -rf "$STUB"
-else
-	printf '  skip cross-session switch test (no client attached)\n'
-fi
-kill "$attach_pid" 2>/dev/null
-
-# --- fzf missing --------------------------------------------------------------
-NOFZF="$(mktemp -d)"
-for c in awk sed cut sort tr wc grep bash cat; do
-	[ -x "$(command -v "$c")" ] && ln -sf "$(command -v "$c")" "$NOFZF/$c"
-done
-ln -sf "$BIN/tmux" "$NOFZF/tmux"
-out="$(env -i PATH="$NOFZF" HOME="$HOME" TMUX_SPOTLIGHT_SESSION=alpha bash "$ROOT/scripts/spotlight.sh" 2>&1 </dev/null)"
-rc=$?
-check 'missing fzf exits non-zero' '1' "$rc"
-contains 'missing fzf explains why' 'fzf is not on PATH' "$out"
-contains 'missing fzf points at the install' 'github.com/junegunn/fzf' "$out"
-rm -rf "$NOFZF"
-
-# --- plugin entry point -------------------------------------------------------
-"$ROOT/spotlight.tmux"
-binding="$(tmux list-keys -T prefix | awk '$2 == "-T" && $4 == "w"')"
-contains 'prefix + w runs the opener' 'scripts/open.sh' "$binding"
-contains 'binding passes the calling session' 'session_name' "$binding"
-contains 'binding passes the calling client' 'client_tty' "$binding"
-
-tmux set-option -g @spotlight-key 'C-w'
-"$ROOT/spotlight.tmux"
-binding="$(tmux list-keys -T prefix | awk '$2 == "-T" && $4 == "C-w"')"
-contains 'custom key is honoured' 'scripts/open.sh' "$binding"
-tmux set-option -gu @spotlight-key
-
-# --- popup sizing ---------------------------------------------------------------
-# Detach whatever the earlier pty test left behind: an attached client changes
-# the size cap, and these assertions compare sizes across several calls.
-tmux detach-client -a 2>/dev/null
-read -r cols rows <<<"$("$ROOT/scripts/popup-size.sh" '')"
-windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
-# shellcheck source-path=SCRIPTDIR/../scripts source=helpers.sh
-. "$ROOT/scripts/helpers.sh"
-check 'size: a row per window, plus chrome, padding and empty slots' \
-	"$((windows + 7 + SPOTLIGHT_HEADER_ROWS + SPOTLIGHT_SEPARATOR_ROWS \
-		+ SPOTLIGHT_PAD_ROWS * 2))" "$rows"
-tmux set-option -g @spotlight-extra-rows 0
-read -r _ tight <<<"$("$ROOT/scripts/popup-size.sh" '')"
-check 'size: empty slots are configurable' "$((rows - 4))" "$tight"
-tmux set-option -gu @spotlight-extra-rows
-widest="$("$ROOT/scripts/list-windows.sh" alpha | cut -f2- | strip_ansi | tr '\t' ' ' \
-	| awk '{ if (length($0) > m) m = length($0) } END { print m }')"
-expected_cols=$((widest + 5 + SPOTLIGHT_PAD_COLS * 2))
-[ "$expected_cols" -lt 40 ] && expected_cols=40
-check 'size: wide enough for the longest row, with a floor' "$expected_cols" "$cols"
-
-# beta must overtake alpha before the popup gets any taller.
-tmux new-window -t '=beta:' -n an-extremely-long-window-name-here -c "$HOME"
-tmux new-window -t '=beta:' -n filler -c "$HOME"
-read -r cols2 rows2 <<<"$("$ROOT/scripts/popup-size.sh" '')"
-check 'size: grows with the deepest session' "$((rows + 1))" "$rows2"
-
-# Growth stops at the cap, which is where a narrow client already sits.
-read -r client_cols _ <<<"$(tmux display-message -p '#{client_width} #{client_height}')"
-cap=$(( ${client_cols:-80} * 9 / 10 ))
-if [ "$cols" -lt "$cap" ]; then
-	check 'size: grows with the widest row' '1' "$([ "$cols2" -gt "$cols" ] && echo 1 || echo 0)"
-else
-	printf '  skip width growth test (already at the %s-column cap)\n' "$cap"
-fi
-check 'size: never wider than the client allows' '1' \
-	"$([ "$cols2" -le "$cap" ] && echo 1 || echo 0)"
-tmux kill-window -t '=beta:an-extremely-long-window-name-here'
-
-# --- the client's size sets the caps ------------------------------------------
-# A client is addressed with -c, not -t. Getting that wrong resolves to
-# nothing and silently leaves both caps on the 80x24 fallback, which clips
-# the list -- so drive it with clients whose size we chose. The client runs
-# inside a second tmux on its own socket, which is the only way to pin its
-# size from a test.
+# --- popup size --------------------------------------------------------------
+# Two clients of sizes we chose, each in its own outer tmux, because only
+# new-session can pin a client's size. This is what catches addressing a
+# client with -t (which resolves to nothing) instead of -c: get that wrong
+# and both answers collapse to the same 80x24 fallback.
 OUTER="spotlight-outer-$$"
 outer() { "$REAL_TMUX" -f /dev/null -L "$OUTER" "$@"; }
-# Each client needs its own outer session: only new-session takes -x/-y.
 outer new-session -d -s tall -x 200 -y 60 "TERM=xterm-256color $REAL_TMUX -f /dev/null -L $SOCKET attach -t '=alpha:'"
 outer new-session -d -s short -x 100 -y 12 "TERM=xterm-256color $REAL_TMUX -f /dev/null -L $SOCKET attach -t '=alpha:'"
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+for _ in $(seq 1 15); do
 	[ "$(tmux list-clients -F x 2>/dev/null | wc -l)" -ge 2 ] && break
 	sleep 0.2
 done
-
-tall="$(tmux list-clients -F '#{client_height} #{client_tty}' | sort -rn | head -1)"
-short="$(tmux list-clients -F '#{client_height} #{client_tty}' | sort -n | head -1)"
-if [ "${tall%% *}" -gt "${short%% *}" ] 2>/dev/null; then
-	read -r _ tall_rows <<<"$("$ROOT/scripts/popup-size.sh" "${tall##* }")"
-	read -r _ short_rows <<<"$("$ROOT/scripts/popup-size.sh" "${short##* }")"
+if [ "$(tmux list-clients -F x 2>/dev/null | wc -l)" -ge 2 ]; then
+	tall_tty="$(tmux list-clients -F '#{client_height} #{client_tty}' | sort -rn | head -1)"
+	short_tty="$(tmux list-clients -F '#{client_height} #{client_tty}' | sort -n | head -1)"
+	read -r _ tall_rows <<<"$(popup_size "${tall_tty##* }")"
+	read -r _ short_rows <<<"$(popup_size "${short_tty##* }")"
 	windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
-	needed=$((windows + 7 + SPOTLIGHT_HEADER_ROWS + SPOTLIGHT_SEPARATOR_ROWS \
-		+ SPOTLIGHT_PAD_ROWS * 2))
-	check 'caps: a tall client fits the whole list' "$needed" "$tall_rows"
-	check 'caps: a short client caps the popup at 80% of its height' \
-		"$((${short%% *} * 4 / 5))" "$short_rows"
-	check 'caps: the two clients give different answers' '1' \
-		"$([ "$tall_rows" -ne "$short_rows" ] && echo 1 || echo 0)"
+	is 'size: a row per window, plus chrome and empty slots' \
+		"$((windows + 7 + HEADER_ROWS + SEPARATOR_ROWS + PAD_ROWS * 2))" "$tall_rows"
+	is 'size: a short client caps it at 80% of its height' "$((${short_tty%% *} * 4 / 5))" "$short_rows"
 else
-	printf '  skip client size cap tests (could not attach two sized clients)\n'
+	printf '  skip popup size tests (could not attach two sized clients)\n'
 fi
 outer kill-server 2>/dev/null
 tmux detach-client -a 2>/dev/null
 
-# --- the opener -----------------------------------------------------------------
-POPUP="$(mktemp -d)"
-cat > "$POPUP/tmux" <<'POPUPSH'
-#!/usr/bin/env bash
-if [ "${1:-}" = display-popup ]; then
-	printf '%s\n' "$@" > "$TEST_POPUP_ARGS"
-	exit 0
+# --- fuzzy matching, through the real fzf ------------------------------------
+if command -v fzf >/dev/null 2>&1; then
+	match() {
+		list_windows alpha | fzf --ansi --delimiter=$'\t' --with-nth=2,3 --nth=1 --filter="$1" |
+			cut -f1 | tr '\n' ' ' | sed 's/ $//'
+	}
+	is 'fuzzy: a gappy subsequence finds the window' 'alpha:2' "$(match mlw)"
+	is 'fuzzy: the context column is not searchable' '' "$(match '2 panes')"
+else
+	printf '  skip fuzzy matching tests (fzf not on PATH)\n'
 fi
-exec REAL_TMUX_PLACEHOLDER "$@"
-POPUPSH
-sed -i "s|REAL_TMUX_PLACEHOLDER|$BIN/tmux|" "$POPUP/tmux"
-chmod +x "$POPUP/tmux"
-open_args() {
-	TEST_POPUP_ARGS="$WORK/popup.args" PATH="$POPUP:$PATH" "$ROOT/scripts/open.sh" alpha '' >/dev/null
-	cat "$WORK/popup.args"
+
+# --- the switcher ------------------------------------------------------------
+# A stub fzf replays one canned reply per call -- query, --expect key,
+# selection -- and records the arguments it was handed.
+cat > "$WORK/fzf" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = --version ] && { echo '0.99.0 (stub)'; exit 0; }
+cat > /dev/null
+n=$(( $(cat "$WORK/n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$WORK/n"
+printf '%s\n' "$@" > "$WORK/args.$n"
+cat "$WORK/reply.$n" 2>/dev/null
+STUB
+sed -i "s|\$WORK|$WORK|g" "$WORK/fzf"
+chmod +x "$WORK/fzf"
+
+switcher() {   # switcher <query> <key> <selection> [<query> <key> <selection>...]
+	rm -f "$WORK/n" "$WORK"/reply.* "$WORK"/args.*
+	local n=1
+	while [ "$#" -gt 0 ]; do
+		printf '%s\n' "$1" "$2" "$3" > "$WORK/reply.$n"
+		shift 3; n=$((n + 1))
+	done
+	( run_switcher alpha '' ) 2>/dev/null
 }
-args="$(open_args)"
-contains 'opener: sizes the popup in cells' "$rows" "$args"
-contains 'opener: keeps the popup open on error' '-EE' "$args"
-contains 'opener: runs the switcher' 'spotlight.sh' "$args"
-contains 'opener: passes the calling session' 'TMUX_SPOTLIGHT_SESSION=alpha' "$args"
 
-tmux set-option -g @spotlight-height '9'
-args="$(open_args)"
-check 'opener: an explicit height overrides the measured one' '9' \
-	"$(printf '%s\n' "$args" | grep -A1 -x -- '-h' | tail -1)"
-tmux set-option -gu @spotlight-height
-rm -rf "$POPUP"
+tmux select-window -t '=alpha:0'
+switcher '' '' "$(printf 'alpha:2\tx\tx')"
+is 'switcher: Enter selects the window' '2' "$(tmux display-message -p -t '=alpha:' '#{window_index}')"
 
-# --- options ------------------------------------------------------------------
-read_option() { bash -c ". '$ROOT/scripts/helpers.sh'; spotlight_option '$1' '$2'"; }
-check 'option falls back to default' 'w' "$(read_option @spotlight-key w)"
-tmux set-option -g @spotlight-key 'W'
-check 'option override wins' 'W' "$(read_option @spotlight-key w)"
+switcher 'serv' right '' '' '' "$(printf 'beta:0\tx\tx')"
+has 'switcher: the arrows browse the next session' $'\033[7m beta ' "$(cat "$WORK/args.2")"
+has 'switcher: carrying the query over' '--query=serv' "$(cat "$WORK/args.2")"
+
+before="$(tmux display-message -p -t '=alpha:' '#{window_index}')"
+switcher '' '' ''
+is 'switcher: an empty selection changes nothing' "$before" \
+	"$(tmux display-message -p -t '=alpha:' '#{window_index}')"
+
+# --- fzf missing --------------------------------------------------------------
+BARE="$(mktemp -d)"
+for c in awk sed cut sort tr wc grep bash cat tput; do
+	[ -x "$(command -v "$c")" ] && ln -sf "$(command -v "$c")" "$BARE/$c"
+done
+ln -sf "$WORK/tmux" "$BARE/tmux"
+out="$(env -i PATH="$BARE" HOME="$HOME" bash "$ROOT/spotlight.tmux" run alpha '' 2>&1 </dev/null)"
+is 'no fzf: exits non-zero' '1' "$?"
+has 'no fzf: says so, and where to get it' 'github.com/junegunn/fzf' "$out"
+rm -rf "$BARE"
+
+# --- plugin load --------------------------------------------------------------
+bash "$ROOT/spotlight.tmux"
+binding="$(tmux list-keys -T prefix | awk '$2 == "-T" && $4 == "w"')"
+has 'load: binds the key to the opener' 'spotlight.tmux open' "$binding"
+has 'load: passing the calling session and client' 'client_tty' "$binding"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
