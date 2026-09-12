@@ -29,13 +29,22 @@ if ! command -v fzf >/dev/null 2>&1; then
 	exit 1
 fi
 
-scope="$(spotlight_option '@spotlight-scope' 'session')"
 prompt="$(spotlight_option '@spotlight-prompt' '❯ ')"
 preview="$(spotlight_option '@spotlight-preview' 'off')"
 preview_pos="$(spotlight_option '@spotlight-preview-position' 'right:50%')"
 
+# The strip lists every session; the list below it shows only the session being
+# browsed, so a query never reaches across sessions.
+mapfile -t sessions < <(tmux list-sessions -F '#{session_name}')
+[ "${#sessions[@]}" -gt 0 ] || exit 0
+
+browsing=0
+for i in "${!sessions[@]}"; do
+	[ "${sessions[$i]}" = "$session" ] && browsing="$i" && break
+done
+
 # shellcheck disable=SC2054  # commas belong to fzf's --color value
-fzf_args=(
+base_args=(
 	--ansi
 	--delimiter=$'\t'
 	--with-nth=2,3
@@ -46,24 +55,67 @@ fzf_args=(
 	--info=inline
 	--no-multi
 	--cycle
+	--print-query
 	--prompt="$prompt"
 	--pointer='▶'
 	--color='pointer:green,prompt:blue,info:8'
-	--header="$([ "$scope" = server ] && echo 'windows: all sessions' || echo "windows: $session")"
 	--header-first
 )
 
 if [ "$preview" = 'on' ]; then
-	fzf_args+=(
+	base_args+=(
 		--preview='tmux capture-pane -ep -t {1} 2>/dev/null | tail -n 200'
 		--preview-window="$preview_pos:wrap"
 	)
 else
-	fzf_args+=(--no-preview)
+	base_args+=(--no-preview)
 fi
 
-selection="$("$CURRENT_DIR/list-windows.sh" "$scope" "$session" | fzf "${fzf_args[@]}")" || exit 0
-[ -n "$selection" ] || exit 0
+# With more than one session, the arrow keys move along the strip. fzf reports
+# them through --expect and this loop redraws for the newly browsed session,
+# carrying the query over so "search somewhere else" is one keypress.
+if [ "${#sessions[@]}" -gt 1 ]; then
+	# shellcheck disable=SC2054  # the comma belongs to fzf's --expect value
+	base_args+=(--expect=left,right)
+fi
+
+query=''
+selection=''
+while :; do
+	target_session="${sessions[$browsing]}"
+	strip="$("$CURRENT_DIR/session-strip.sh" "$browsing" "${sessions[@]}")"
+
+	args=("${base_args[@]}" --query="$query")
+	[ -n "$strip" ] && args+=(--header="$strip")
+
+	out="$("$CURRENT_DIR/list-windows.sh" "$target_session" | fzf "${args[@]}")"
+	status=$?
+	[ "$status" -eq 130 ] && exit 0   # Esc / Ctrl-C
+
+	mapfile -t reply <<<"$out"
+	query="${reply[0]:-}"
+	if [ "${#sessions[@]}" -gt 1 ]; then
+		key="${reply[1]:-}"
+		selection="${reply[2]:-}"
+	else
+		key=''
+		selection="${reply[1]:-}"
+	fi
+
+	case "$key" in
+		left)
+			browsing=$(((browsing - 1 + ${#sessions[@]}) % ${#sessions[@]}))
+			continue
+			;;
+		right)
+			browsing=$(((browsing + 1) % ${#sessions[@]}))
+			continue
+			;;
+	esac
+
+	[ -n "$selection" ] || exit 0
+	break
+done
 
 target="${selection%%$'\t'*}"
 target_session="${target%:*}"
