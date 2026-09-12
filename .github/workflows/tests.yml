@@ -1,0 +1,22 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tmux and fzf
+        run: sudo apt-get update && sudo apt-get install -y tmux fzf
+      - name: Versions
+        run: tmux -V && fzf --version
+      - name: Run tests
+        run: tests/run.sh
+      - name: Shellcheck
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck -x spotlight.tmux scripts/*.sh tests/run.sh
