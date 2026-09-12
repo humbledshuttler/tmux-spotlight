@@ -273,7 +273,8 @@ windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
 # shellcheck source-path=SCRIPTDIR/../scripts source=helpers.sh
 . "$ROOT/scripts/helpers.sh"
 check 'size: a row per window, plus chrome, padding and empty slots' \
-	"$((windows + 8 + SPOTLIGHT_PAD_ROWS * 2))" "$rows"
+	"$((windows + 7 + SPOTLIGHT_HEADER_ROWS + SPOTLIGHT_SEPARATOR_ROWS \
+		+ SPOTLIGHT_PAD_ROWS * 2))" "$rows"
 tmux set-option -g @spotlight-extra-rows 0
 read -r _ tight <<<"$("$ROOT/scripts/popup-size.sh" '')"
 check 'size: empty slots are configurable' "$((rows - 4))" "$tight"
@@ -301,6 +302,41 @@ fi
 check 'size: never wider than the client allows' '1' \
 	"$([ "$cols2" -le "$cap" ] && echo 1 || echo 0)"
 tmux kill-window -t '=beta:an-extremely-long-window-name-here'
+
+# --- the client's size sets the caps ------------------------------------------
+# A client is addressed with -c, not -t. Getting that wrong resolves to
+# nothing and silently leaves both caps on the 80x24 fallback, which clips
+# the list -- so drive it with clients whose size we chose. The client runs
+# inside a second tmux on its own socket, which is the only way to pin its
+# size from a test.
+OUTER="spotlight-outer-$$"
+outer() { "$REAL_TMUX" -f /dev/null -L "$OUTER" "$@"; }
+# Each client needs its own outer session: only new-session takes -x/-y.
+outer new-session -d -s tall -x 200 -y 60 "TERM=xterm-256color $REAL_TMUX -f /dev/null -L $SOCKET attach -t '=alpha:'"
+outer new-session -d -s short -x 100 -y 12 "TERM=xterm-256color $REAL_TMUX -f /dev/null -L $SOCKET attach -t '=alpha:'"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+	[ "$(tmux list-clients -F x 2>/dev/null | wc -l)" -ge 2 ] && break
+	sleep 0.2
+done
+
+tall="$(tmux list-clients -F '#{client_height} #{client_tty}' | sort -rn | head -1)"
+short="$(tmux list-clients -F '#{client_height} #{client_tty}' | sort -n | head -1)"
+if [ "${tall%% *}" -gt "${short%% *}" ] 2>/dev/null; then
+	read -r _ tall_rows <<<"$("$ROOT/scripts/popup-size.sh" "${tall##* }")"
+	read -r _ short_rows <<<"$("$ROOT/scripts/popup-size.sh" "${short##* }")"
+	windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
+	needed=$((windows + 7 + SPOTLIGHT_HEADER_ROWS + SPOTLIGHT_SEPARATOR_ROWS \
+		+ SPOTLIGHT_PAD_ROWS * 2))
+	check 'caps: a tall client fits the whole list' "$needed" "$tall_rows"
+	check 'caps: a short client caps the popup at 80% of its height' \
+		"$((${short%% *} * 4 / 5))" "$short_rows"
+	check 'caps: the two clients give different answers' '1' \
+		"$([ "$tall_rows" -ne "$short_rows" ] && echo 1 || echo 0)"
+else
+	printf '  skip client size cap tests (could not attach two sized clients)\n'
+fi
+outer kill-server 2>/dev/null
+tmux detach-client -a 2>/dev/null
 
 # --- the opener -----------------------------------------------------------------
 POPUP="$(mktemp -d)"

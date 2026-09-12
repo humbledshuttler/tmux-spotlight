@@ -12,11 +12,14 @@ CURRENT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR source=helpers.sh
 . "$CURRENT_DIR/helpers.sh"
 
+# A client is addressed with -c; -t takes a pane, and silently resolves to
+# nothing for a tty, which would leave the caps on the 80x24 fallback.
 client="${1:-}"
 if [ -n "$client" ]; then
-	read -r max_cols max_rows <<<"$(tmux display-message -p -t "$client" '#{client_width} #{client_height}')"
-else
-	read -r max_cols max_rows <<<"$(tmux display-message -p '#{client_width} #{client_height}')"
+	read -r max_cols max_rows <<<"$(tmux display-message -p -c "$client" '#{client_width} #{client_height}' 2>/dev/null)"
+fi
+if [ -z "${max_cols:-}" ]; then
+	read -r max_cols max_rows <<<"$(tmux display-message -p '#{client_width} #{client_height}' 2>/dev/null)"
 fi
 max_cols="${max_cols:-80}"
 max_rows="${max_rows:-24}"
@@ -49,12 +52,12 @@ cols=$((widest + 5 + SPOTLIGHT_PAD_COLS * 2))
 [ "$cols" -lt 40 ] && cols=40
 [ "$cols" -gt $((max_cols * 9 / 10)) ] && cols=$((max_cols * 9 / 10))
 
-# borders (2) + prompt (1) + padding above and below + strip (0 or 1) +
+# borders (2) + prompt (1) + header + separator + padding above and below +
 # one row per window, plus a few empty slots so the list is not wedged
 # against its own last row
 extra="$(spotlight_option '@spotlight-extra-rows' '4')"
-rows=$((deepest + extra + 3 + SPOTLIGHT_PAD_ROWS * 2))
-[ "${#sessions[@]}" -gt 1 ] && rows=$((rows + 1))
+rows=$((deepest + extra + 3 + SPOTLIGHT_HEADER_ROWS + SPOTLIGHT_SEPARATOR_ROWS
+	+ SPOTLIGHT_PAD_ROWS * 2))
 [ "$rows" -lt 6 ] && rows=6
 [ "$rows" -gt $((max_rows * 4 / 5)) ] && rows=$((max_rows * 4 / 5))
 

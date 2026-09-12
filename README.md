@@ -6,14 +6,21 @@ of making you walk a tree with the arrow keys.
 
 ```
 ╭───────────────────────── spotlight ─────────────────────────╮
+│                                                             │
 │                   ←  0  · nuks · woot →                     │
-│❯ expl                                                       │
-│▶    6  explore redesign          ~/repo/my-dot-files        │
+│                                                             │
+│  ❯ expl                                               1/13  │
+│  ─────────────────────────────────────────────────────────  │
+│  ▶    6   explore redesign        ~/repo/share              │
+│                                                             │
 ╰─────────────────────────────────────────────────────────────╯
 ```
 
 Typing matches against the window **index** and **name**, so `mlw` finds
 `my long window` and `3` jumps to window 3. `Enter` switches, `Esc` closes.
+
+The query sits in a field of its own — a blank line above it, a rule below —
+so it reads as somewhere to type rather than another row of the list.
 
 ## Sessions
 
@@ -54,8 +61,9 @@ run-shell ~/path/to/tmux-spotlight/spotlight.tmux
 ## Layout
 
 The popup is measured before it opens, not set to a percentage of your screen:
-it is as tall as the deepest session's window list plus a few empty slots, and
-as wide as the longest row, capped at 80% of the client's height and 90% of its
+it is as tall as the deepest session's window list plus a few empty slots and
+the chrome around it (border, query field, rule, strip, padding), and as wide as
+the longest row, capped at 80% of the *attached client's* height and 90% of its
 width. A session with three windows gets a small popup rather than a screenful
 of blank rows.
 

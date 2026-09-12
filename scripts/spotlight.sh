@@ -32,7 +32,7 @@ fi
 prompt="$(spotlight_option '@spotlight-prompt' '❯ ')"
 preview="$(spotlight_option '@spotlight-preview' 'off')"
 preview_pos="$(spotlight_option '@spotlight-preview-position' 'right:50%')"
-colors="$(spotlight_option '@spotlight-colors' 'bg+:-1,fg+:-1:bold,hl:cyan,hl+:cyan:bold,pointer:green,prompt:blue,info:8,header:-1,gutter:-1,border:8')"
+colors="$(spotlight_option '@spotlight-colors' 'bg+:-1,fg+:-1:bold,hl:cyan,hl+:cyan:bold,pointer:green,prompt:cyan:bold,query:-1:bold,info:8,header:-1,gutter:-1,separator:8')"
 SPOTLIGHT_CONTEXT="$(spotlight_option '@spotlight-context' 'path')"
 export SPOTLIGHT_CONTEXT
 
@@ -74,10 +74,6 @@ base_args=(
 	--header-first
 )
 
-# Newer fzf rules a line under the prompt, which costs the row the popup was
-# sized to give the last window.
-fzf_at_least 0.34.0 && base_args+=(--no-separator)
-
 # A list packed against the border is hard to read.
 [ "$SPOTLIGHT_PAD_ROWS" -gt 0 ] &&
 	base_args+=(--padding="$SPOTLIGHT_PAD_ROWS,$SPOTLIGHT_PAD_COLS")
@@ -105,8 +101,9 @@ while :; do
 	target_session="${sessions[$browsing]}"
 	strip="$("$CURRENT_DIR/session-strip.sh" "$browsing" "$((width - 4))" "${sessions[@]}")"
 
-	args=("${base_args[@]}" --query="$query")
-	[ -n "$strip" ] && args+=(--header="$strip")
+	# A blank second header line lifts the query clear of the strip; fzf's
+	# own separator closes the field off underneath it.
+	args=("${base_args[@]}" --query="$query" --header="$strip"$'\n ')
 
 	out="$("$CURRENT_DIR/list-windows.sh" "$target_session" | fzf "${args[@]}")"
 	status=$?

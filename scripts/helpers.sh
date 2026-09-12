@@ -37,4 +37,14 @@ if fzf_at_least 0.35.0; then
 	SPOTLIGHT_PAD_ROWS=1
 	SPOTLIGHT_PAD_COLS=2
 fi
-export SPOTLIGHT_PAD_ROWS SPOTLIGHT_PAD_COLS
+
+# fzf rules a line under the prompt from 0.34 on. It frames the query as a
+# search field, so it is wanted -- but it costs a row the popup has to budget.
+SPOTLIGHT_SEPARATOR_ROWS=0
+fzf_at_least 0.34.0 && SPOTLIGHT_SEPARATOR_ROWS=1
+
+# The header is always two lines: the session strip (blank with one session)
+# and a blank line that sets the query apart from it.
+SPOTLIGHT_HEADER_ROWS=2
+
+export SPOTLIGHT_PAD_ROWS SPOTLIGHT_PAD_COLS SPOTLIGHT_SEPARATOR_ROWS SPOTLIGHT_HEADER_ROWS
