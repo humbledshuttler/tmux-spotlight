@@ -31,10 +31,18 @@ render() {
 			rows[NR] = $0
 			if (length($2) > iw) iw = length($2)
 			if (length($3) > nw) nw = length($3)
+
+			path = (context == "path" || context == "both") ? shorten($7) : ""
+			if (context == "command" || context == "both")
+				path = (path == "") ? $4 : $4 "  " path
+			paths[NR] = path
+			if (length(path) > pw) pw = length(path)
+
+			panes[NR] = ($5 + 0 > 1) ? $5 " panes" : ""
+			if (length(panes[NR]) > cw) cw = length(panes[NR])
 		}
 		END {
 			dim   = "\033[38;5;244m"
-			bold  = "\033[1m"
 			green = "\033[32m"
 			reset = "\033[0m"
 			for (i = 1; i <= NR; i++) {
@@ -43,18 +51,17 @@ render() {
 				if (want != "" && substr(f[1], 1, length(want) + 1) != want ":") continue
 
 				marker = (f[6] == "1") ? green "*" reset : " "
-				ctx = ""
-				if (context == "command" || context == "both") ctx = f[4]
-				if (context == "path" || context == "both") {
-					if (ctx != "") ctx = ctx "  "
-					ctx = ctx shorten(f[7])
-				}
-				# Pane count only when there is more than one -- otherwise it
-				# is the same noise on every row.
-				if (f[5] + 0 > 1) ctx = (ctx == "" ? "" : ctx "  ") f[5] " panes"
 
-				printf "%s\t%s %s%*s%s  %s%-*s%s \t%s%s%s\n",
-					f[1], marker, dim, iw, f[2], reset, bold, nw, f[3], reset,
+				# Every column is padded to one width so the eye can run down
+				# them: ragged trailing text is what makes a dense list hard
+				# to read. Pane counts sit right-aligned in a column of their
+				# own rather than trailing each path.
+				ctx = ""
+				if (pw > 0) ctx = sprintf("%-*s", pw, paths[i])
+				if (cw > 0) ctx = ctx sprintf("  %*s", cw, panes[i])
+
+				printf "%s\t%s %s%*s%s   %-*s  \t%s%s%s\n",
+					f[1], marker, dim, iw, f[2], reset, nw, f[3],
 					dim, ctx, reset
 			}
 		}

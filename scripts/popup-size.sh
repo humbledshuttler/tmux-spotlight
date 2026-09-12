@@ -9,6 +9,8 @@
 set -u
 
 CURRENT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=helpers.sh
+. "$CURRENT_DIR/helpers.sh"
 
 client="${1:-}"
 if [ -n "$client" ]; then
@@ -37,17 +39,19 @@ done
 strip_cells=0
 if [ "${#sessions[@]}" -gt 1 ]; then
 	strip="$("$CURRENT_DIR/session-strip.sh" 0 0 "${sessions[@]}" | sed $'s/\033\\[[0-9;]*m//g')"
-	strip_cells="${#strip}"
+	strip_cells=$(( ${#strip} + SPOTLIGHT_PAD_COLS * 2 ))
 fi
 
-# borders (2) + fzf's pointer gutter (2) + a column of breathing room
-cols=$((widest + 5))
+# borders (2) + fzf's pointer gutter (2) + padding on each side + a column
+# of breathing room
+cols=$((widest + 5 + SPOTLIGHT_PAD_COLS * 2))
 [ "$((strip_cells + 6))" -gt "$cols" ] && cols=$((strip_cells + 6))
 [ "$cols" -lt 40 ] && cols=40
 [ "$cols" -gt $((max_cols * 9 / 10)) ] && cols=$((max_cols * 9 / 10))
 
-# borders (2) + prompt (1) + strip (0 or 1) + one row per window
-rows=$((deepest + 3))
+# borders (2) + prompt (1) + padding above and below + strip (0 or 1) +
+# one row per window
+rows=$((deepest + 3 + SPOTLIGHT_PAD_ROWS * 2))
 [ "${#sessions[@]}" -gt 1 ] && rows=$((rows + 1))
 [ "$rows" -lt 6 ] && rows=6
 [ "$rows" -gt $((max_rows * 4 / 5)) ] && rows=$((max_rows * 4 / 5))

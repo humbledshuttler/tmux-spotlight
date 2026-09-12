@@ -36,13 +36,8 @@ colors="$(spotlight_option '@spotlight-colors' 'bg+:-1,fg+:-1:bold,hl:cyan,hl+:c
 SPOTLIGHT_CONTEXT="$(spotlight_option '@spotlight-context' 'path')"
 export SPOTLIGHT_CONTEXT
 
-# The strip is centred on the popup's own width.
-width="$(tput cols 2>/dev/null || echo 80)"
-
-fzf_version="$(fzf --version 2>/dev/null | awk '{print $1}')"
-fzf_at_least() {
-	[ -n "$fzf_version" ] && printf '%s\n%s\n' "$1" "$fzf_version" | sort -C -V
-}
+# The strip is centred on the popup's own width, inside the padding.
+width="$(($(tput cols 2>/dev/null || echo 80) - SPOTLIGHT_PAD_COLS * 2))"
 
 # --info=inline-right tucks the match counter out of the way; it arrived in
 # fzf 0.42.
@@ -82,6 +77,10 @@ base_args=(
 # Newer fzf rules a line under the prompt, which costs the row the popup was
 # sized to give the last window.
 fzf_at_least 0.34.0 && base_args+=(--no-separator)
+
+# A list packed against the border is hard to read.
+[ "$SPOTLIGHT_PAD_ROWS" -gt 0 ] &&
+	base_args+=(--padding="$SPOTLIGHT_PAD_ROWS,$SPOTLIGHT_PAD_COLS")
 
 if [ "$preview" = 'on' ]; then
 	base_args+=(

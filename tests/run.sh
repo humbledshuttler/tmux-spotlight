@@ -261,10 +261,13 @@ tmux set-option -gu @spotlight-key
 # --- popup sizing ---------------------------------------------------------------
 read -r cols rows <<<"$("$ROOT/scripts/popup-size.sh" '')"
 windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
-check 'size: a row per window, plus border, prompt and strip' "$((windows + 4))" "$rows"
+# shellcheck source=../scripts/helpers.sh
+. "$ROOT/scripts/helpers.sh"
+check 'size: a row per window, plus border, prompt, strip and padding' \
+	"$((windows + 4 + SPOTLIGHT_PAD_ROWS * 2))" "$rows"
 widest="$("$ROOT/scripts/list-windows.sh" alpha | cut -f2- | strip_ansi | tr '\t' ' ' \
 	| awk '{ if (length($0) > m) m = length($0) } END { print m }')"
-expected_cols=$((widest + 5))
+expected_cols=$((widest + 5 + SPOTLIGHT_PAD_COLS * 2))
 [ "$expected_cols" -lt 40 ] && expected_cols=40
 check 'size: wide enough for the longest row, with a floor' "$expected_cols" "$cols"
 

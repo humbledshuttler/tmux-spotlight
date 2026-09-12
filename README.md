@@ -60,7 +60,13 @@ session with three windows gets a small popup; nothing is padded out with empty
 rows.
 
 Columns are padded against every window on the server rather than per session,
-so moving along the strip does not shuffle the layout underneath you.
+so moving along the strip does not shuffle the layout underneath you — index,
+name, path and pane count each line up, and pane counts sit right-aligned in a
+column of their own instead of trailing each path at a different place.
+
+The list is inset by a row and two columns where fzf supports `--padding`, and
+the measured size accounts for it: a list packed against the border is hard to
+read however well its columns line up.
 
 ## Options
 
