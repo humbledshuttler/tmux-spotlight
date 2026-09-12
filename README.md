@@ -87,7 +87,7 @@ Set any of these in `~/.tmux.conf` *before* the plugin is loaded.
 | `@spotlight-height` | measured | Popup height, in cells or as a percentage. Overrides the measured height. |
 | `@spotlight-extra-rows` | `4` | Empty list rows kept below the last window, so the list is not wedged against its own last row. `0` fits it exactly. |
 | `@spotlight-context` | `path` | The dim column after the window name: `path`, `command`, `both`, or `none`. A pane count is appended when a window has more than one pane. |
-| `@spotlight-colors` | see below | fzf `--color` spec. The default paints matches cyan and the pointer green, and leaves backgrounds alone so it sits on any theme. |
+| `@spotlight-colors` | see below | fzf `--color` spec. The default paints matches cyan, the pointer green, and the row under the cursor bold on ANSI colour 8 — your terminal's own grey, rather than a hardcoded shade. |
 | `@spotlight-border` | `rounded` | Popup border style (any tmux `popup-border-lines` value). |
 | `@spotlight-title` | `` ` spotlight ` `` | Popup title. |
 | `@spotlight-preview` | `off` | `on` shows a live preview of the highlighted window's active pane. Costs list width, so it is off by default. |
