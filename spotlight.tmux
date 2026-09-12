@@ -82,14 +82,17 @@ list_windows() {
 			# grey has the same problem from the other side -- it survives
 			# onto the highlight and disappears into it.
 			dim = "\033[2m"; undim = "\033[22m"
-			green = "\033[32m"; default_fg = "\033[39m"
+			# The active-window marker carries no colour: the row under the
+			# cursor is drawn in reverse video, which would turn a coloured
+			# glyph into a solid block of that colour.
+			bold = "\033[1m"; unbold = "\033[22m"
 
 			for (i = 1; i <= NR; i++) {
 				split(rows[i], f, "\t")
 				# A session name cannot contain ":", so the prefix is exact.
 				if (substr(f[1], 1, length(want) + 1) != want ":") continue
 
-				marker = (f[6] == "1") ? green "*" default_fg : " "
+				marker = (f[6] == "1") ? bold "*" unbold : " "
 
 				# Every column padded to one width: ragged trailing text is
 				# what makes a dense list hard to read.
@@ -245,7 +248,7 @@ run_switcher() {
 		--print-query --header-first
 		--prompt="$(opt @spotlight-prompt '❯ ')"
 		--pointer='▶'
-		--color="$(opt @spotlight-colors 'bg+:-1,fg+:-1:reverse,hl:cyan,hl+:cyan:bold,pointer:green,prompt:cyan:bold,query:-1:bold,info:8,header:-1,gutter:-1,separator:8')"
+		--color="$(opt @spotlight-colors 'bg+:-1,fg+:-1:reverse,hl:cyan,hl+:cyan:bold,pointer:green,prompt:cyan:bold,query:-1:bold,info:8,header:-1,gutter:0,separator:8')"
 	)
 	[ "$PAD_ROWS" -gt 0 ] && base+=(--padding="$PAD_ROWS,$PAD_COLS")
 	if [ "$(opt @spotlight-preview off)" = on ]; then

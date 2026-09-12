@@ -2,17 +2,7 @@
 
 `prefix + w` opens a popup listing your windows, and filters them as you type.
 
-```
-╭───────────────────────── spotlight ─────────────────────────╮
-│                                                             │
-│                   ←  0  · nuks · woot →                     │
-│                                                             │
-│  ❯ expl                                               1/13  │
-│  ─────────────────────────────────────────────────────────  │
-│  ▶    6   explore redesign        ~/repo/share              │
-│                                                             │
-╰─────────────────────────────────────────────────────────────╯
-```
+![tmux-spotlight](docs/demo.gif)
 
 Matching is fuzzy, against the window index and name: `mlw` finds
 `my long window`, `3` jumps to window 3.
