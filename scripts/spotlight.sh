@@ -32,7 +32,7 @@ fi
 prompt="$(spotlight_option '@spotlight-prompt' '❯ ')"
 preview="$(spotlight_option '@spotlight-preview' 'off')"
 preview_pos="$(spotlight_option '@spotlight-preview-position' 'right:50%')"
-colors="$(spotlight_option '@spotlight-colors' 'bg+:8,fg+:-1:bold,hl:cyan,hl+:cyan:bold,pointer:green,prompt:cyan:bold,query:-1:bold,info:8,header:-1,gutter:-1,separator:8')"
+colors="$(spotlight_option '@spotlight-colors' 'bg+:-1,fg+:-1:reverse,hl:cyan,hl+:cyan:bold,pointer:green,prompt:cyan:bold,query:-1:bold,info:8,header:-1,gutter:-1,separator:8')"
 SPOTLIGHT_CONTEXT="$(spotlight_option '@spotlight-context' 'path')"
 export SPOTLIGHT_CONTEXT
 

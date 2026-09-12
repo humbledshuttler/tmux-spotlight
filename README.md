@@ -87,7 +87,7 @@ Set any of these in `~/.tmux.conf` *before* the plugin is loaded.
 | `@spotlight-height` | measured | Popup height, in cells or as a percentage. Overrides the measured height. |
 | `@spotlight-extra-rows` | `4` | Empty list rows kept below the last window, so the list is not wedged against its own last row. `0` fits it exactly. |
 | `@spotlight-context` | `path` | The dim column after the window name: `path`, `command`, `both`, or `none`. A pane count is appended when a window has more than one pane. |
-| `@spotlight-colors` | see below | fzf `--color` spec. The default paints matches cyan, the pointer green, and the row under the cursor bold on ANSI colour 8 — your terminal's own grey, rather than a hardcoded shade. |
+| `@spotlight-colors` | see below | fzf `--color` spec. The default paints matches cyan, the pointer green, and reverses the row under the cursor, which contrasts by construction on any palette. For a subtler bar instead: `bg+:8,fg+:-1:bold,…`. |
 | `@spotlight-border` | `rounded` | Popup border style (any tmux `popup-border-lines` value). |
 | `@spotlight-title` | `` ` spotlight ` `` | Popup title. |
 | `@spotlight-preview` | `off` | `on` shows a live preview of the highlighted window's active pane. Costs list width, so it is off by default. |
@@ -122,7 +122,13 @@ session, carrying the query over with `--query` and redrawing the strip from
 `scripts/session-strip.sh`. It costs a redraw per keypress, but it works on any
 fzf new enough to have `--expect` instead of requiring a recent `transform-header`.
 
-Two small details keep the layout honest: `--tabstop=1` makes the field
+Secondary columns are dimmed with the faint *attribute* rather than a grey
+colour, and the row never emits a full reset. Both matter for the highlight:
+fzf styles the current row by opening an escape before the line, so a `\033[0m`
+in the content closes it halfway through, and a hardcoded grey survives onto
+the highlight and disappears into it.
+
+Two other details keep the layout honest: `--tabstop=1` makes the field
 delimiter render as exactly one space, so a row's width on screen is the width
 that was measured, and `--no-separator` reclaims the row newer fzf rules off
 under the prompt.

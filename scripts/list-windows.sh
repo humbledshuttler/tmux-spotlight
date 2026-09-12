@@ -42,15 +42,21 @@ render() {
 			if (length(panes[NR]) > cw) cw = length(panes[NR])
 		}
 		END {
-			dim   = "\033[38;5;244m"
-			green = "\033[32m"
-			reset = "\033[0m"
+			# Attributes, not colours, and never a full reset: fzf styles
+			# the row under the cursor by opening an escape before the line,
+			# and "\033[0m" here would close it again halfway through. A
+			# hardcoded grey has the same problem from the other side --
+			# it survives onto the highlight bar and disappears into it.
+			dim     = "\033[2m"     # faint, relative to whatever fg applies
+			undim   = "\033[22m"
+			green   = "\033[32m"
+			default = "\033[39m"   # foreground only; leaves bg and attrs
 			for (i = 1; i <= NR; i++) {
 				split(rows[i], f, "\t")
 				# A session name cannot contain ":", so the prefix is exact.
 				if (want != "" && substr(f[1], 1, length(want) + 1) != want ":") continue
 
-				marker = (f[6] == "1") ? green "*" reset : " "
+				marker = (f[6] == "1") ? green "*" default : " "
 
 				# Every column is padded to one width so the eye can run down
 				# them: ragged trailing text is what makes a dense list hard
@@ -61,8 +67,8 @@ render() {
 				if (cw > 0) ctx = ctx sprintf("  %*s", cw, panes[i])
 
 				printf "%s\t%s %s%*s%s   %-*s  \t%s%s%s\n",
-					f[1], marker, dim, iw, f[2], reset, nw, f[3],
-					dim, ctx, reset
+					f[1], marker, dim, iw, f[2], undim, nw, f[3],
+					dim, ctx, undim
 			}
 		}
 	'
