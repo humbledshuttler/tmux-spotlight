@@ -261,7 +261,7 @@ tmux set-option -gu @spotlight-key
 # --- popup sizing ---------------------------------------------------------------
 read -r cols rows <<<"$("$ROOT/scripts/popup-size.sh" '')"
 windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
-# shellcheck source=../scripts/helpers.sh
+# shellcheck source-path=SCRIPTDIR/../scripts source=helpers.sh
 . "$ROOT/scripts/helpers.sh"
 check 'size: a row per window, plus border, prompt, strip and padding' \
 	"$((windows + 4 + SPOTLIGHT_PAD_ROWS * 2))" "$rows"
