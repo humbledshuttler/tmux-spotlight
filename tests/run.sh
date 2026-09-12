@@ -272,8 +272,12 @@ read -r cols rows <<<"$("$ROOT/scripts/popup-size.sh" '')"
 windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
 # shellcheck source-path=SCRIPTDIR/../scripts source=helpers.sh
 . "$ROOT/scripts/helpers.sh"
-check 'size: a row per window, plus border, prompt, strip and padding' \
-	"$((windows + 4 + SPOTLIGHT_PAD_ROWS * 2))" "$rows"
+check 'size: a row per window, plus chrome, padding and empty slots' \
+	"$((windows + 8 + SPOTLIGHT_PAD_ROWS * 2))" "$rows"
+tmux set-option -g @spotlight-extra-rows 0
+read -r _ tight <<<"$("$ROOT/scripts/popup-size.sh" '')"
+check 'size: empty slots are configurable' "$((rows - 4))" "$tight"
+tmux set-option -gu @spotlight-extra-rows
 widest="$("$ROOT/scripts/list-windows.sh" alpha | cut -f2- | strip_ansi | tr '\t' ' ' \
 	| awk '{ if (length($0) > m) m = length($0) } END { print m }')"
 expected_cols=$((widest + 5 + SPOTLIGHT_PAD_COLS * 2))

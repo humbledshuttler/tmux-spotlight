@@ -54,10 +54,10 @@ run-shell ~/path/to/tmux-spotlight/spotlight.tmux
 ## Layout
 
 The popup is measured before it opens, not set to a percentage of your screen:
-it is exactly as tall as the deepest session's window list and as wide as the
-longest row, capped at 80% of the client's height and 90% of its width. A
-session with three windows gets a small popup; nothing is padded out with empty
-rows.
+it is as tall as the deepest session's window list plus a few empty slots, and
+as wide as the longest row, capped at 80% of the client's height and 90% of its
+width. A session with three windows gets a small popup rather than a screenful
+of blank rows.
 
 Columns are padded against every window on the server rather than per session,
 so moving along the strip does not shuffle the layout underneath you — index,
@@ -77,6 +77,7 @@ Set any of these in `~/.tmux.conf` *before* the plugin is loaded.
 | `@spotlight-key` | `w` | Key, pressed after the prefix, that opens the switcher. |
 | `@spotlight-width` | measured | Popup width, in cells or as a percentage. Overrides the measured width. |
 | `@spotlight-height` | measured | Popup height, in cells or as a percentage. Overrides the measured height. |
+| `@spotlight-extra-rows` | `4` | Empty list rows kept below the last window, so the list is not wedged against its own last row. `0` fits it exactly. |
 | `@spotlight-context` | `path` | The dim column after the window name: `path`, `command`, `both`, or `none`. A pane count is appended when a window has more than one pane. |
 | `@spotlight-colors` | see below | fzf `--color` spec. The default paints matches cyan and the pointer green, and leaves backgrounds alone so it sits on any theme. |
 | `@spotlight-border` | `rounded` | Popup border style (any tmux `popup-border-lines` value). |

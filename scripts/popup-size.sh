@@ -50,8 +50,10 @@ cols=$((widest + 5 + SPOTLIGHT_PAD_COLS * 2))
 [ "$cols" -gt $((max_cols * 9 / 10)) ] && cols=$((max_cols * 9 / 10))
 
 # borders (2) + prompt (1) + padding above and below + strip (0 or 1) +
-# one row per window
-rows=$((deepest + 3 + SPOTLIGHT_PAD_ROWS * 2))
+# one row per window, plus a few empty slots so the list is not wedged
+# against its own last row
+extra="$(spotlight_option '@spotlight-extra-rows' '4')"
+rows=$((deepest + extra + 3 + SPOTLIGHT_PAD_ROWS * 2))
 [ "${#sessions[@]}" -gt 1 ] && rows=$((rows + 1))
 [ "$rows" -lt 6 ] && rows=6
 [ "$rows" -gt $((max_rows * 4 / 5)) ] && rows=$((max_rows * 4 / 5))
