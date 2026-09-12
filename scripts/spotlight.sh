@@ -32,6 +32,22 @@ fi
 prompt="$(spotlight_option '@spotlight-prompt' '❯ ')"
 preview="$(spotlight_option '@spotlight-preview' 'off')"
 preview_pos="$(spotlight_option '@spotlight-preview-position' 'right:50%')"
+colors="$(spotlight_option '@spotlight-colors' 'bg+:-1,fg+:-1:bold,hl:cyan,hl+:cyan:bold,pointer:green,prompt:blue,info:8,header:-1,gutter:-1,border:8')"
+SPOTLIGHT_CONTEXT="$(spotlight_option '@spotlight-context' 'path')"
+export SPOTLIGHT_CONTEXT
+
+# The strip is centred on the popup's own width.
+width="$(tput cols 2>/dev/null || echo 80)"
+
+fzf_version="$(fzf --version 2>/dev/null | awk '{print $1}')"
+fzf_at_least() {
+	[ -n "$fzf_version" ] && printf '%s\n%s\n' "$1" "$fzf_version" | sort -C -V
+}
+
+# --info=inline-right tucks the match counter out of the way; it arrived in
+# fzf 0.42.
+info='inline'
+fzf_at_least 0.42.0 && info='inline-right'
 
 # The strip lists every session; the list below it shows only the session being
 # browsed, so a query never reaches across sessions.
@@ -52,15 +68,20 @@ base_args=(
 	# column: the context column stays visible but unsearchable.
 	--nth=1
 	--layout=reverse
-	--info=inline
+	--info="$info"
+	--tabstop=1
 	--no-multi
 	--cycle
 	--print-query
 	--prompt="$prompt"
 	--pointer='▶'
-	--color='pointer:green,prompt:blue,info:8'
+	--color="$colors"
 	--header-first
 )
+
+# Newer fzf rules a line under the prompt, which costs the row the popup was
+# sized to give the last window.
+fzf_at_least 0.34.0 && base_args+=(--no-separator)
 
 if [ "$preview" = 'on' ]; then
 	base_args+=(
@@ -83,7 +104,7 @@ query=''
 selection=''
 while :; do
 	target_session="${sessions[$browsing]}"
-	strip="$("$CURRENT_DIR/session-strip.sh" "$browsing" "${sessions[@]}")"
+	strip="$("$CURRENT_DIR/session-strip.sh" "$browsing" "$((width - 4))" "${sessions[@]}")"
 
 	args=("${base_args[@]}" --query="$query")
 	[ -n "$strip" ] && args+=(--header="$strip")
@@ -122,9 +143,11 @@ target_session="${target%:*}"
 
 if [ "$target_session" != "$session" ]; then
 	if [ -n "$client" ]; then
-		tmux switch-client -c "$client" -t "$target_session"
+		tmux switch-client -c "$client" -t "=$target_session"
 	else
-		tmux switch-client -t "$target_session"
+		tmux switch-client -t "=$target_session"
 	fi
 fi
-tmux select-window -t "$target"
+# "=" keeps a session named like a number (say "0") from being read as a
+# window index.
+tmux select-window -t "=$target"

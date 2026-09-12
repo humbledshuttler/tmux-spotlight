@@ -65,12 +65,12 @@ field() { cut -f"$1"; }
 
 echo "tmux-spotlight tests ($(tmux -V), socket $SOCKET)"
 
-tmux new-session -d -s alpha -n editor
-tmux new-window -t alpha -n server
-tmux new-window -t alpha -n 'my long window'
-tmux new-session -d -s beta -n notes
-tmux new-window -t beta -n build
-tmux select-window -t alpha:1
+tmux new-session -d -s alpha -n editor -c "$HOME"
+tmux new-window -t '=alpha:' -n server -c "$HOME"
+tmux new-window -t '=alpha:' -n 'my long window' -c "$HOME"
+tmux new-session -d -s beta -n notes -c "$HOME"
+tmux new-window -t '=beta:' -n build -c "$HOME"
+tmux select-window -t '=alpha:1' 
 
 # --- the window list ----------------------------------------------------------
 out="$("$ROOT/scripts/list-windows.sh" alpha)"
@@ -88,25 +88,50 @@ check 'list: inactive windows unmarked' '' \
 	"$(printf '%s\n' "$out" | sed -n 1p | field 2 | strip_ansi | grep '\*')"
 check 'list: searchable column padded to one width' '1' \
 	"$(printf '%s\n' "$out" | field 2 | strip_ansi | awk '{print length($0)}' | sort -u | wc -l | tr -d ' ')"
-contains 'list: context shows pane count' '1 pane' \
+contains 'list: context shows the path' '~' \
 	"$(printf '%s\n' "$out" | sed -n 1p | field 3 | strip_ansi)"
+check 'list: no pane count for a single pane' '' \
+	"$(printf '%s\n' "$out" | sed -n 1p | field 3 | strip_ansi | grep pane)"
+# Whatever tmux says the pane is running -- a fresh pane is not reliably the
+# login shell yet.
+pane_cmd="$(tmux display-message -p -t '=alpha:0' '#{pane_current_command}')"
+# shellcheck disable=SC2209  # "command" is the option's value, not the builtin
+contains 'list: context can be the command instead' "$pane_cmd" \
+	"$(SPOTLIGHT_CONTEXT=command "$ROOT/scripts/list-windows.sh" alpha | sed -n 1p | field 3 | strip_ansi)"
+check 'list: context can be turned off' '' \
+	"$(SPOTLIGHT_CONTEXT=none "$ROOT/scripts/list-windows.sh" alpha | sed -n 1p | field 3 | strip_ansi | tr -d ' ')"
 check 'list: other session listed on request' '2' \
 	"$("$ROOT/scripts/list-windows.sh" beta | wc -l | tr -d ' ')"
 
-tmux split-window -t alpha:0
-contains 'list: context pluralises pane count' '2 panes' \
+tmux split-window -t '=alpha:0'
+contains 'list: pane count appears once a window splits' '2 panes' \
 	"$("$ROOT/scripts/list-windows.sh" alpha | sed -n 1p | field 3 | strip_ansi)"
 
+# A session named like a number must not be read as a window index.
+tmux new-session -d -s 0 -n zero-window -c "$HOME"
+check 'list: a numerically named session resolves' 'zero-window' \
+	"$("$ROOT/scripts/list-windows.sh" 0 | field 2 | strip_ansi | awk '{print $NF}')"
+check 'list: columns are padded across all sessions' '1' \
+	"$({ "$ROOT/scripts/list-windows.sh" alpha; "$ROOT/scripts/list-windows.sh" beta; } \
+		| field 2 | strip_ansi | awk '{print length($0)}' | sort -u | wc -l | tr -d ' ')"
+tmux kill-session -t '=0' 
+
 # --- the session strip ---------------------------------------------------------
-strip="$("$ROOT/scripts/session-strip.sh" 0 alpha beta)"
+strip="$("$ROOT/scripts/session-strip.sh" 0 0 alpha beta)"
 contains 'strip: lists every session' 'alpha' "$(printf '%s' "$strip" | strip_ansi)"
 contains 'strip: lists every session (2)' 'beta' "$(printf '%s' "$strip" | strip_ansi)"
 contains 'strip: shows the arrow affordance' '←' "$(printf '%s' "$strip" | strip_ansi)"
 contains 'strip: highlights the browsed session' $'\033[7m alpha ' "$strip"
 lacks 'strip: does not highlight the others' $'\033[7m beta ' "$strip"
 contains 'strip: highlight follows the index' $'\033[7m beta ' \
-	"$("$ROOT/scripts/session-strip.sh" 1 alpha beta)"
-check 'strip: hidden when there is only one session' '' "$("$ROOT/scripts/session-strip.sh" 0 alpha)"
+	"$("$ROOT/scripts/session-strip.sh" 1 0 alpha beta)"
+check 'strip: hidden when there is only one session' '' "$("$ROOT/scripts/session-strip.sh" 0 40 alpha)"
+
+wide="$("$ROOT/scripts/session-strip.sh" 0 60 alpha beta | strip_ansi)"
+narrow="$("$ROOT/scripts/session-strip.sh" 0 0 alpha beta | strip_ansi)"
+lead="${wide%%[! ]*}"
+check 'strip: centred within the given width' "$(((60 - ${#narrow}) / 2))" "${#lead}"
+check 'strip: no padding without a width' '←' "${narrow:0:1}"
 
 # --- fuzzy matching (needs a real fzf) ----------------------------------------
 if command -v fzf >/dev/null 2>&1; then
@@ -131,6 +156,7 @@ fi
 STUB="$(mktemp -d)"
 cat > "$STUB/fzf" <<'STUBSH'
 #!/usr/bin/env bash
+[ "${1:-}" = --version ] && { echo '0.99.0 (stub)'; exit 0; }
 cat > /dev/null
 n=$(( $(cat "$TEST_DIR/n" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$TEST_DIR/n"
@@ -193,7 +219,7 @@ done
 if [ -n "${client_tty:-}" ]; then
 	STUB="$(mktemp -d)"
 	# shellcheck disable=SC2016  # $TEST_PICK is expanded by the stub, not here
-	printf '#!/usr/bin/env bash\ncat >/dev/null\nprintf "%%s\\n" "" "" "$TEST_PICK"\n' > "$STUB/fzf"
+	printf '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo 0.99.0; exit 0; }\ncat >/dev/null\nprintf "%%s\\n" "" "" "$TEST_PICK"\n' > "$STUB/fzf"
 	chmod +x "$STUB/fzf"
 	PATH="$STUB:$PATH" TEST_PICK="$(printf 'beta:0\tx\tx')" \
 		TMUX_SPOTLIGHT_SESSION=alpha TMUX_SPOTLIGHT_CLIENT="$client_tty" \
@@ -222,20 +248,62 @@ rm -rf "$NOFZF"
 # --- plugin entry point -------------------------------------------------------
 "$ROOT/spotlight.tmux"
 binding="$(tmux list-keys -T prefix | awk '$2 == "-T" && $4 == "w"')"
-contains 'prefix + w opens a popup' 'display-popup' "$binding"
-contains 'prefix + w runs the switcher' 'scripts/spotlight.sh' "$binding"
+contains 'prefix + w runs the opener' 'scripts/open.sh' "$binding"
 contains 'binding passes the calling session' 'session_name' "$binding"
+contains 'binding passes the calling client' 'client_tty' "$binding"
 
 tmux set-option -g @spotlight-key 'C-w'
 "$ROOT/spotlight.tmux"
 binding="$(tmux list-keys -T prefix | awk '$2 == "-T" && $4 == "C-w"')"
-contains 'custom key is honoured' 'display-popup' "$binding"
+contains 'custom key is honoured' 'scripts/open.sh' "$binding"
 tmux set-option -gu @spotlight-key
 
-tmux set-option -g @spotlight-width '42%'
-"$ROOT/spotlight.tmux"
-binding="$(tmux list-keys -T prefix | awk '$2 == "-T" && $4 == "w"')"
-contains 'custom width is honoured' '42%' "$binding"
+# --- popup sizing ---------------------------------------------------------------
+read -r cols rows <<<"$("$ROOT/scripts/popup-size.sh" '')"
+windows="$(tmux list-windows -t '=alpha:' -F x | wc -l | tr -d ' ')"
+check 'size: a row per window, plus border, prompt and strip' "$((windows + 4))" "$rows"
+widest="$("$ROOT/scripts/list-windows.sh" alpha | cut -f2- | strip_ansi | tr '\t' ' ' \
+	| awk '{ if (length($0) > m) m = length($0) } END { print m }')"
+expected_cols=$((widest + 5))
+[ "$expected_cols" -lt 40 ] && expected_cols=40
+check 'size: wide enough for the longest row, with a floor' "$expected_cols" "$cols"
+
+# beta must overtake alpha before the popup gets any taller.
+tmux new-window -t '=beta:' -n an-extremely-long-window-name-here -c "$HOME"
+tmux new-window -t '=beta:' -n filler -c "$HOME"
+read -r cols2 rows2 <<<"$("$ROOT/scripts/popup-size.sh" '')"
+check 'size: grows with the deepest session' "$((rows + 1))" "$rows2"
+check 'size: grows with the widest row' '1' "$([ "$cols2" -gt "$cols" ] && echo 1 || echo 0)"
+tmux kill-window -t '=beta:an-extremely-long-window-name-here'
+
+# --- the opener -----------------------------------------------------------------
+POPUP="$(mktemp -d)"
+cat > "$POPUP/tmux" <<'POPUPSH'
+#!/usr/bin/env bash
+if [ "${1:-}" = display-popup ]; then
+	printf '%s\n' "$@" > "$TEST_POPUP_ARGS"
+	exit 0
+fi
+exec REAL_TMUX_PLACEHOLDER "$@"
+POPUPSH
+sed -i "s|REAL_TMUX_PLACEHOLDER|$BIN/tmux|" "$POPUP/tmux"
+chmod +x "$POPUP/tmux"
+open_args() {
+	TEST_POPUP_ARGS="$WORK/popup.args" PATH="$POPUP:$PATH" "$ROOT/scripts/open.sh" alpha '' >/dev/null
+	cat "$WORK/popup.args"
+}
+args="$(open_args)"
+contains 'opener: sizes the popup in cells' "$rows" "$args"
+contains 'opener: keeps the popup open on error' '-EE' "$args"
+contains 'opener: runs the switcher' 'spotlight.sh' "$args"
+contains 'opener: passes the calling session' 'TMUX_SPOTLIGHT_SESSION=alpha' "$args"
+
+tmux set-option -g @spotlight-height '9'
+args="$(open_args)"
+check 'opener: an explicit height overrides the measured one' '9' \
+	"$(printf '%s\n' "$args" | grep -A1 -x -- '-h' | tail -1)"
+tmux set-option -gu @spotlight-height
+rm -rf "$POPUP"
 
 # --- options ------------------------------------------------------------------
 read_option() { bash -c ". '$ROOT/scripts/helpers.sh'; spotlight_option '$1' '$2'"; }
