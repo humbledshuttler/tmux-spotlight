@@ -7,6 +7,8 @@
 Matching is fuzzy, against the window index and name: `mlw` finds
 `my long window`, `3` jumps to window 3.
 
+The cursor starts on the active window, the one marked `*`.
+
 ## Keys
 
 | Key | Action |

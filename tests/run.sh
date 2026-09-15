@@ -136,9 +136,13 @@ tmux select-window -t '=alpha:0'
 switcher '' '' "$(printf 'alpha:2\tx\tx')"
 is 'switcher: Enter selects the window' '2' "$(tmux display-message -p -t '=alpha:' '#{window_index}')"
 
+switcher '' '' ''
+has 'switcher: the cursor starts on the active window' '--bind=load:pos(3)' "$(cat "$WORK/args.1")"
+
 switcher 'serv' right '' '' '' "$(printf 'beta:0\tx\tx')"
 has 'switcher: the arrows browse the next session' $'\033[7m beta ' "$(cat "$WORK/args.2")"
 has 'switcher: carrying the query over' '--query=serv' "$(cat "$WORK/args.2")"
+hasnt 'switcher: a carried query starts on the best match instead' 'load:pos' "$(cat "$WORK/args.2")"
 
 before="$(tmux display-message -p -t '=alpha:' '#{window_index}')"
 switcher '' '' ''

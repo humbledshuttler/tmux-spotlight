@@ -262,13 +262,18 @@ run_switcher() {
 	# shellcheck disable=SC2054  # the comma belongs to fzf's --expect value
 	[ "${#sessions[@]}" -gt 1 ] && base+=(--expect=left,right)
 
-	local query='' selection='' strip out status key reply target target_session
+	local query='' selection='' strip pos out status key reply target target_session
 	while :; do
 		strip="$(session_strip "$browsing" "$width" "${sessions[@]}")"
+		# Start the cursor on the active window, unless a query carried over
+		# (then the best match leads). load and pos() arrived in fzf 0.36.
+		pos=''
+		[ -z "$query" ] && fzf_at_least 0.36.0 &&
+			pos="$(tmux list-windows -t "=${sessions[$browsing]}:" -F '#{window_active}' | grep -n -m1 1 | cut -d: -f1)"
 		# A blank second header line lifts the query clear of the strip; fzf's
 		# own rule closes the field off underneath it.
 		out="$(list_windows "${sessions[$browsing]}" |
-			fzf "${base[@]}" --query="$query" --header="$strip"$'\n ')"
+			fzf "${base[@]}" ${pos:+--bind="load:pos($pos)"} --query="$query" --header="$strip"$'\n ')"
 		status=$?
 		[ "$status" -eq 130 ] && exit 0   # Esc / Ctrl-C
 
